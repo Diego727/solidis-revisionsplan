@@ -238,6 +238,13 @@ thead th:first-child{left:0;z-index:8}
       </div>
       <div class="field"><label>Mitarbeitende</label><div class="employee-picks" id="employeePicks"></div></div>
       <div class="field"><label>Notiz</label><textarea id="eventNote" rows="2" placeholder="Optional"></textarea></div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="repeatNextYear" style="width:auto">
+          Termin im Folgejahr in derselben Kalenderwoche wiederholen
+        </label>
+        <small style="color:var(--muted)">Die Wochentage bleiben gleich (z. B. Montag–Dienstag), auch wenn das Datum im Folgejahr anders ist.</small>
+      </div>
     </div>
     <div class="modal-foot">
       <div><button class="btn danger" id="deleteBtn" style="display:none">Löschen</button></div>
@@ -415,13 +422,13 @@ function eventCovers(e,date){return dateRange(e.date,e.dateTo||e.date).includes(
 function openModal(date=isoDate(current), emp=null, half="V"){
   editingId=null; document.getElementById("modalTitle").textContent="Termin erfassen"; document.getElementById("deleteBtn").style.display="none";
   document.getElementById("eventDate").value=date;document.getElementById("eventDateTo").value=date;document.getElementById("eventCode").value="";document.getElementById("eventCategory").value="Definitiv";
-  document.getElementById("eventType").value="vor Ort";document.getElementById("absenceType").value="";document.getElementById("eventNote").value="";
+  document.getElementById("eventType").value="vor Ort";document.getElementById("absenceType").value="";document.getElementById("eventNote").value="";document.getElementById("repeatNextYear").checked=false;
   setHalf(half);renderEmployeePicks(emp?[emp]:[]);document.getElementById("modalSub").textContent="";document.getElementById("modal").classList.add("show");
 }
 function openEdit(id){
   const e=events.find(x=>x.id===id);if(!e)return; editingId=id;document.getElementById("modalTitle").textContent="Termin bearbeiten";document.getElementById("deleteBtn").style.display="inline-block";
   document.getElementById("eventDate").value=e.date;document.getElementById("eventDateTo").value=e.dateTo||e.date;document.getElementById("eventCode").value=e.code;document.getElementById("eventCategory").value=e.category;
-  document.getElementById("eventType").value=e.type||"";document.getElementById("absenceType").value=e.absence||"";document.getElementById("eventNote").value=e.note||"";
+  document.getElementById("eventType").value=e.type||"";document.getElementById("absenceType").value=e.absence||"";document.getElementById("eventNote").value=e.note||"";document.getElementById("repeatNextYear").checked=false;
   setHalf(e.half);renderEmployeePicks(e.employees);document.getElementById("modalSub").textContent=e.employees.join(", ");document.getElementById("modal").classList.add("show");
 }
 function collectEvent(){
@@ -432,19 +439,81 @@ function collectEvent(){
   if(!code){toast("Bitte Kundenkürzel oder Bezeichnung eingeben.");return null} if(!selected.length){toast("Bitte mindestens eine Person auswählen.");return null}
   return {id:editingId||null,date:from,dateTo:to,half:selectedHalf,code,category:absence?"Abwesend":document.getElementById("eventCategory").value,type:absence?"":document.getElementById("eventType").value,absence,note:document.getElementById("eventNote").value.trim(),employees:selected};
 }
+function isoWeekInfo(dateStr){
+  const d=new Date(dateStr+"T12:00:00");
+  const weekday=d.getDay()===0?7:d.getDay();
+  const tmp=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const day=tmp.getUTCDay()||7;
+  tmp.setUTCDate(tmp.getUTCDate()+4-day);
+  const isoYear=tmp.getUTCFullYear();
+  const yearStart=new Date(Date.UTC(isoYear,0,1));
+  const week=Math.ceil((((tmp-yearStart)/86400000)+1)/7);
+  return {isoYear,week,weekday};
+}
+function dateFromISOWeek(year,week,weekday){
+  const jan4=new Date(Date.UTC(year,0,4));
+  const jan4Day=jan4.getUTCDay()||7;
+  const monday=new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate()-(jan4Day-1)+(week-1)*7);
+  monday.setUTCDate(monday.getUTCDate()+(weekday-1));
+  return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth()+1).padStart(2,"0")}-${String(monday.getUTCDate()).padStart(2,"0")}`;
+}
+function nextYearSameWeekRange(from,to){
+  const a=isoWeekInfo(from),b=isoWeekInfo(to||from);
+  return {
+    date:dateFromISOWeek(a.isoYear+1,a.week,a.weekday),
+    dateTo:dateFromISOWeek(b.isoYear+1,b.week,b.weekday)
+  };
+}
+async function insertEventWithEmployees(e){
+  const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
+  const {data,error}=await db.from('events').insert(row).select('id').single();if(error)throw error;
+  const links=e.employees.map(code=>{const emp=employees.find(x=>x.id===code);return emp?{event_id:data.id,employee_id:emp.dbId}:null}).filter(Boolean);
+  if(links.length){const {error:linkErr}=await db.from('event_employees').insert(links);if(linkErr)throw linkErr;}
+  return data.id;
+}
 async function saveEvent(download=false){
-  const e=collectEvent();if(!e)return;const days=dateRange(e.date,e.dateTo);
+  const e=collectEvent();if(!e)return;
+  const repeatNextYear=document.getElementById("repeatNextYear").checked;
+  const days=dateRange(e.date,e.dateTo);
   const conflict=events.find(x=>x.id!==e.id&&x.employees.some(id=>e.employees.includes(id))&&days.some(d=>eventCovers(x,d)));
   if(conflict){const who=conflict.employees.find(id=>e.employees.includes(id)),emp=employees.find(x=>x.id===who);toast(`Doppelbuchung: ${emp?.name||who} hat an diesem Datum bereits einen Termin.`);return}
+
+  let follow=null;
+  if(repeatNextYear){
+    const mapped=nextYearSameWeekRange(e.date,e.dateTo);
+    follow={...e,id:null,date:mapped.date,dateTo:mapped.dateTo};
+    const followDays=dateRange(follow.date,follow.dateTo);
+    const followConflict=events.find(x=>x.employees.some(id=>follow.employees.includes(id))&&followDays.some(d=>eventCovers(x,d)));
+    if(followConflict){
+      const who=followConflict.employees.find(id=>follow.employees.includes(id)),emp=employees.find(x=>x.id===who);
+      toast(`Folgejahr nicht möglich: ${emp?.name||who} ist in dieser Kalenderwoche bereits belegt.`);return;
+    }
+  }
+
   setSync('● speichert …');
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
   try{
     let eventId;
-    if(editingId){eventId=Number(editingId);const {error}=await db.from('events').update(row).eq('id',eventId);if(error)throw error;const {error:delErr}=await db.from('event_employees').delete().eq('event_id',eventId);if(delErr)throw delErr;}
-    else{const {data,error}=await db.from('events').insert(row).select('id').single();if(error)throw error;eventId=data.id;}
-    const links=e.employees.map(code=>{const emp=employees.find(x=>x.id===code);return emp?{event_id:eventId,employee_id:emp.dbId}:null}).filter(Boolean);
-    if(links.length){const {error}=await db.from('event_employees').insert(links);if(error)throw error;}
-    document.getElementById('modal').classList.remove('show');await loadData(false);toast('Termin gespeichert.');
+    if(editingId){
+      eventId=Number(editingId);
+      const {error}=await db.from('events').update(row).eq('id',eventId);if(error)throw error;
+      const {error:delErr}=await db.from('event_employees').delete().eq('event_id',eventId);if(delErr)throw delErr;
+      const links=e.employees.map(code=>{const emp=employees.find(x=>x.id===code);return emp?{event_id:eventId,employee_id:emp.dbId}:null}).filter(Boolean);
+      if(links.length){const {error}=await db.from('event_employees').insert(links);if(error)throw error;}
+    }else{
+      eventId=await insertEventWithEmployees(e);
+    }
+
+    let followId=null;
+    if(follow)followId=await insertEventWithEmployees(follow);
+
+    document.getElementById('modal').classList.remove('show');await loadData(false);
+    if(follow){
+      const f1=new Date(follow.date+"T12:00:00").toLocaleDateString("de-CH");
+      const f2=new Date(follow.dateTo+"T12:00:00").toLocaleDateString("de-CH");
+      toast(`Termin gespeichert + Folgejahr ${f1}${f2!==f1?`–${f2}`:""}.`);
+    }else toast('Termin gespeichert.');
     if(download){const saved=events.find(x=>Number(x.id)===eventId);if(saved)openOutlookEvent(saved);}
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
 }
