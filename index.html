@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidis Revisionsplan v13 Live-Sync</title>
+<title>Solidis Revisionsplan v14 Outlook</title>
 <style>
 :root{
   --navy:#3d5877; --navy2:#2f4866; --blue:#567596; --bg:#f5f7fa; --card:#fff;
@@ -199,7 +199,7 @@ thead th:first-child{left:0;z-index:8}
       <section id="einstellungen" class="panel">
         <div class="card">
           <h2 style="margin-top:0">Microsoft 365 / Outlook</h2>
-          <p>Die App kann bereits Outlook-kompatible Kalenderdateien (.ics) erzeugen. Für eine vollständig automatische Eintragung direkt in die Outlook-Kalender der Mitarbeitenden braucht die veröffentlichte App später eine Microsoft-365-Anmeldung über Microsoft Graph.</p>
+          <p>Mit „Speichern & Outlook öffnen“ wird der Termin zuerst im Revisionsplan gespeichert und danach als vorausgefüllter Termin in Outlook im Browser geöffnet. Dort muss er nur noch gespeichert werden. Für eine vollständig automatische Synchronisation ohne diesen letzten Klick wäre später Microsoft Graph nötig.</p>
           <div class="settings-note"><b>Vorgesehene Zeiten:</b><br>Vormittag 08:00–12:00 · Nachmittag 13:00–17:00 · Ganztag 08:00–17:00</div>
           <h3>Datenspeicherung</h3>
           <p>Die Daten werden zentral in Supabase gespeichert. Änderungen sind für angemeldete Mitarbeitende gemeinsam verfügbar und werden automatisch synchronisiert.</p>
@@ -241,7 +241,7 @@ thead th:first-child{left:0;z-index:8}
     </div>
     <div class="modal-foot">
       <div><button class="btn danger" id="deleteBtn" style="display:none">Löschen</button></div>
-      <div class="right"><button class="btn ghost" id="outlookBtn">Speichern & Outlook</button><button class="btn blue" id="saveBtn">Speichern</button></div>
+      <div class="right"><button class="btn ghost" id="outlookBtn">Speichern & Outlook öffnen</button><button class="btn blue" id="saveBtn">Speichern</button></div>
     </div>
   </div>
 </div>
@@ -445,8 +445,26 @@ async function saveEvent(download=false){
     const links=e.employees.map(code=>{const emp=employees.find(x=>x.id===code);return emp?{event_id:eventId,employee_id:emp.dbId}:null}).filter(Boolean);
     if(links.length){const {error}=await db.from('event_employees').insert(links);if(error)throw error;}
     document.getElementById('modal').classList.remove('show');await loadData(false);toast('Termin gespeichert.');
-    if(download){const saved=events.find(x=>Number(x.id)===eventId);if(saved)downloadICS([saved]);}
+    if(download){const saved=events.find(x=>Number(x.id)===eventId);if(saved)openOutlookEvent(saved);}
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
+}
+function outlookTime(date,half){
+  if(half==="V")return[`${date}T08:00:00`,`${date}T12:00:00`];
+  if(half==="N")return[`${date}T13:00:00`,`${date}T17:00:00`];
+  return[`${date}T08:00:00`,`${date}T17:00:00`];
+}
+function openOutlookEvent(e){
+  const days=dateRange(e.date,e.dateTo||e.date);
+  if(!days.length){toast("Kein gültiger Arbeitstag für Outlook gefunden.");return}
+  if(days.length>1){toast("Outlook wird für den ersten Tag geöffnet. Weitere Tage bitte über die Kalenderdatei exportieren.");}
+  const day=days[0];
+  const [startdt,enddt]=outlookTime(day,e.half);
+  const names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");
+  const subject=e.code+(e.type?` - ${e.type}`:e.absence?` - ${e.absence}`:"");
+  const body=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${e.note}`:""].filter(Boolean).join("\n");
+  const params=new URLSearchParams({subject,startdt,enddt,body,path:"/calendar/action/compose",rru:"addevent"});
+  const url=`https://outlook.live.com/calendar/0/deeplink/compose?${params.toString()}`;
+  window.open(url,"_blank","noopener");
 }
 function icsTime(date,half){const d=date.replaceAll("-","");if(half==="V")return[`${d}T080000`,`${d}T120000`];if(half==="N")return[`${d}T130000`,`${d}T170000`];return[`${d}T080000`,`${d}T170000`]}
 function downloadICS(items){
