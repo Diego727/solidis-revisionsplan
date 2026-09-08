@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidis Revisionsplan v15 Outlook Desktop</title>
+<title>Solidis Revisionsplan v16 Outlook Direkt</title>
 <style>
 :root{
   --navy:#3d5877; --navy2:#2f4866; --blue:#567596; --bg:#f5f7fa; --card:#fff;
@@ -199,7 +199,7 @@ thead th:first-child{left:0;z-index:8}
       <section id="einstellungen" class="panel">
         <div class="card">
           <h2 style="margin-top:0">Microsoft 365 / Outlook</h2>
-          <p>Mit „Speichern & Outlook öffnen“ wird der Termin zuerst im Revisionsplan gespeichert und danach als Outlook-Kalenderdatei (.ics) an die installierte Outlook-App übergeben. Je nach Browser-/Windows-Einstellung kann einmalig eine Bestätigung zum Öffnen von Outlook erscheinen. Für eine vollständig automatische Synchronisation ohne Bestätigung wäre später Microsoft Graph nötig.</p>
+          <p>Mit „Speichern & Outlook öffnen“ versucht die App jetzt direkt die installierte Outlook-App über Windows zu öffnen und den Termin bereits vorauszufüllen. Je nach Browser kann einmalig „Outlook öffnen?“ erscheinen. Falls der direkte Aufruf auf einem Gerät blockiert wird, bleibt „Kalenderdatei (.ics)“ als Rückfalllösung verfügbar. Für eine vollständig automatische Synchronisation ohne Bestätigung wäre später Microsoft Graph nötig.</p>
           <div class="settings-note"><b>Vorgesehene Zeiten:</b><br>Vormittag 08:00–12:00 · Nachmittag 13:00–17:00 · Ganztag 08:00–17:00</div>
           <h3>Datenspeicherung</h3>
           <p>Die Daten werden zentral in Supabase gespeichert. Änderungen sind für angemeldete Mitarbeitende gemeinsam verfügbar und werden automatisch synchronisiert.</p>
@@ -491,6 +491,10 @@ async function saveEvent(download=false){
     }
   }
 
+  // Wichtig: Den Desktop-Aufruf noch innerhalb des ursprünglichen Benutzer-Klicks auslösen.
+  // Browser blockieren externe App-Protokolle häufiger, wenn sie erst nach einem await gestartet werden.
+  if(download) openOutlookDesktopDirect(e);
+
   setSync('● speichert …');
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
   try{
@@ -514,8 +518,32 @@ async function saveEvent(download=false){
       const f2=new Date(follow.dateTo+"T12:00:00").toLocaleDateString("de-CH");
       toast(`Termin gespeichert + Folgejahr ${f1}${f2!==f1?`–${f2}`:""}.`);
     }else toast('Termin gespeichert.');
-    if(download){const saved=events.find(x=>Number(x.id)===eventId);if(saved)openOutlookEvent(saved);}
+    if(download) toast('Termin gespeichert. Outlook Desktop wurde angefordert.');
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
+}
+function openOutlookDesktopDirect(e){
+  const selected=e.employees.map(id=>employees.find(x=>x.id===id)).filter(Boolean);
+  const subject=e.code+(e.type?` - ${e.type}`:e.absence?` - ${e.absence}`:"");
+  const attendeeEmails=selected.map(x=>x.email?.trim()).filter(Boolean);
+  const missingEmails=selected.filter(x=>!x.email?.trim());
+  if(missingEmails.length) toast(`Keine Outlook-E-Mail hinterlegt für: ${missingEmails.map(x=>x.name||x.id).join(", ")}`);
+
+  const startClock=e.half==="V"?"08:00:00":e.half==="N"?"13:00:00":"08:00:00";
+  const endClock=e.half==="V"?"12:00:00":e.half==="N"?"17:00:00":"17:00:00";
+  const start=`${e.date}T${startClock}`;
+  const end=`${e.dateTo||e.date}T${endClock}`;
+  const names=selected.map(x=>x.name||x.id).join(", ");
+
+  const params=new URLSearchParams();
+  params.set("title",subject);
+  params.set("start",start);
+  params.set("end",end);
+  if(e.type) params.set("location",e.type);
+  if(attendeeEmails.length) params.set("attendees",attendeeEmails.join(","));
+  // ms-outlook:// ist der registrierte Outlook-App-Aufruf.
+  // Das direkte Setzen von location.href hat auf Windows die beste Chance,
+  // die Desktop-App aus einem echten Benutzer-Klick heraus zu starten.
+  window.location.href=`ms-outlook://events/new?${params.toString()}`;
 }
 function escapeICS(v){return String(v??"").replace(/\\/g,"\\\\").replace(/\r?\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;")}
 function desktopIcsTime(date,half){
