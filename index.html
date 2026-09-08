@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidis Revisionsplan v14 Outlook</title>
+<title>Solidis Revisionsplan v15 Outlook Desktop</title>
 <style>
 :root{
   --navy:#3d5877; --navy2:#2f4866; --blue:#567596; --bg:#f5f7fa; --card:#fff;
@@ -199,7 +199,7 @@ thead th:first-child{left:0;z-index:8}
       <section id="einstellungen" class="panel">
         <div class="card">
           <h2 style="margin-top:0">Microsoft 365 / Outlook</h2>
-          <p>Mit „Speichern & Outlook öffnen“ wird der Termin zuerst im Revisionsplan gespeichert und danach als vorausgefüllter Termin in Outlook im Browser geöffnet. Dort muss er nur noch gespeichert werden. Für eine vollständig automatische Synchronisation ohne diesen letzten Klick wäre später Microsoft Graph nötig.</p>
+          <p>Mit „Speichern & Outlook öffnen“ wird der Termin zuerst im Revisionsplan gespeichert und danach als Outlook-Kalenderdatei (.ics) an die installierte Outlook-App übergeben. Je nach Browser-/Windows-Einstellung kann einmalig eine Bestätigung zum Öffnen von Outlook erscheinen. Für eine vollständig automatische Synchronisation ohne Bestätigung wäre später Microsoft Graph nötig.</p>
           <div class="settings-note"><b>Vorgesehene Zeiten:</b><br>Vormittag 08:00–12:00 · Nachmittag 13:00–17:00 · Ganztag 08:00–17:00</div>
           <h3>Datenspeicherung</h3>
           <p>Die Daten werden zentral in Supabase gespeichert. Änderungen sind für angemeldete Mitarbeitende gemeinsam verfügbar und werden automatisch synchronisiert.</p>
@@ -517,28 +517,45 @@ async function saveEvent(download=false){
     if(download){const saved=events.find(x=>Number(x.id)===eventId);if(saved)openOutlookEvent(saved);}
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
 }
-function outlookTime(date,half){
-  if(half==="V")return[`${date}T08:00:00`,`${date}T12:00:00`];
-  if(half==="N")return[`${date}T13:00:00`,`${date}T17:00:00`];
-  return[`${date}T08:00:00`,`${date}T17:00:00`];
+function escapeICS(v){return String(v??"").replace(/\\/g,"\\\\").replace(/\r?\n/g,"\\n").replace(/,/g,"\\,").replace(/;/g,"\\;")}
+function desktopIcsTime(date,half){
+  const d=date.replaceAll("-","");
+  if(half==="V")return[`${d}T080000`,`${d}T120000`];
+  if(half==="N")return[`${d}T130000`,`${d}T170000`];
+  return[`${d}T080000`,`${d}T170000`];
 }
 function openOutlookEvent(e){
   const days=dateRange(e.date,e.dateTo||e.date);
   if(!days.length){toast("Kein gültiger Arbeitstag für Outlook gefunden.");return}
-  if(days.length>1){toast("Outlook wird für den ersten Tag geöffnet. Weitere Tage bitte über die Kalenderdatei exportieren.");}
-  const day=days[0];
-  const [startdt,enddt]=outlookTime(day,e.half);
-  const names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");
+  const selected=e.employees.map(id=>employees.find(x=>x.id===id)).filter(Boolean);
+  const names=selected.map(x=>x.name||x.id).join(", ");
   const subject=e.code+(e.type?` - ${e.type}`:e.absence?` - ${e.absence}`:"");
-  const body=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${e.note}`:""].filter(Boolean).join("\n");
-  const attendeeEmails=e.employees.map(id=>employees.find(x=>x.id===id)?.email?.trim()).filter(Boolean);
-  const missingEmails=e.employees.map(id=>employees.find(x=>x.id===id)).filter(emp=>emp && !emp.email?.trim());
-  const data={subject,startdt,enddt,body,path:"/calendar/action/compose",rru:"addevent"};
-  if(attendeeEmails.length)data.to=attendeeEmails.join(",");
-  const params=new URLSearchParams(data);
+  const attendeeEmails=selected.map(x=>x.email?.trim()).filter(Boolean);
+  const missingEmails=selected.filter(x=>!x.email?.trim());
   if(missingEmails.length)toast(`Keine Outlook-E-Mail hinterlegt für: ${missingEmails.map(x=>x.name||x.id).join(", ")}`);
-  const url=`https://outlook.office.com/calendar/deeplink/compose?${params.toString()}`;
-  window.open(url,"_blank","noopener");
+
+  let out="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Solidis//Revisionsplan//DE\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n";
+  for(const day of days){
+    const [st,en]=desktopIcsTime(day,e.half);
+    const uid=`${e.id}-${day}@solidis-revisionsplan`;
+    const desc=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${e.note}`:""] .filter(Boolean).join("\n");
+    out+="BEGIN:VEVENT\r\n";
+    out+=`UID:${escapeICS(uid)}\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z")}\r\n`;
+    out+=`DTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${escapeICS(subject)}\r\nDESCRIPTION:${escapeICS(desc)}\r\n`;
+    for(const mail of attendeeEmails)out+=`ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${escapeICS(mail)}\r\n`;
+    out+="END:VEVENT\r\n";
+  }
+  out+="END:VCALENDAR\r\n";
+  const blob=new Blob([out],{type:"text/calendar;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download=`${(e.code||"Solidis-Termin").replace(/[^a-z0-9_-]+/gi,"_")}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+  toast("Termin für die Outlook-App erstellt. Falls Windows fragt, bitte ‚Outlook öffnen‘ wählen.");
 }
 function icsTime(date,half){const d=date.replaceAll("-","");if(half==="V")return[`${d}T080000`,`${d}T120000`];if(half==="N")return[`${d}T130000`,`${d}T170000`];return[`${d}T080000`,`${d}T170000`]}
 function downloadICS(items){
