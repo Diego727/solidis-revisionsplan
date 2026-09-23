@@ -482,7 +482,7 @@ async function saveEvent(download=false){
   let follow=null;
   if(repeatNextYear){
     const mapped=nextYearSameWeekRange(e.date,e.dateTo);
-    follow={...e,id:null,date:mapped.date,dateTo:mapped.dateTo};
+    follow={...e,id:null,date:mapped.date,dateTo:mapped.dateTo,category:"Pendent"};
     const followDays=dateRange(follow.date,follow.dateTo);
     const followConflict=events.find(x=>x.employees.some(id=>follow.employees.includes(id))&&followDays.some(d=>eventCovers(x,d)));
     if(followConflict){
