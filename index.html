@@ -493,7 +493,7 @@ async function saveEvent(download=false){
 
   // Wichtig: Den Desktop-Aufruf noch innerhalb des ursprünglichen Benutzer-Klicks auslösen.
   // Browser blockieren externe App-Protokolle häufiger, wenn sie erst nach einem await gestartet werden.
-  if(download) openOutlookEvent(e);
+  if(download) openSolidisOutlook(e);
 
   setSync('● speichert …');
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
@@ -521,6 +521,22 @@ async function saveEvent(download=false){
     if(download) toast('Termin gespeichert. Outlook Desktop wurde angefordert.');
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
 }
+function openSolidisOutlook(e){
+  const selected=e.employees.map(id=>employees.find(x=>x.id===id)).filter(Boolean);
+  const subject=e.code+(e.type?` - ${e.type}`:e.absence?` - ${e.absence}`:"");
+  const attendeeEmails=selected.map(x=>x.email?.trim()).filter(Boolean);
+  const startClock=e.half==="V"?"08:00":e.half==="N"?"13:00":"08:00";
+  const endClock=e.half==="V"?"12:00":e.half==="N"?"17:00":"17:00";
+  const params=new URLSearchParams();
+  params.set("subject",subject);
+  params.set("start",`${e.date}T${startClock}`);
+  params.set("end",`${e.dateTo||e.date}T${endClock}`);
+  if(e.type)params.set("location",e.type);
+  if(e.note)params.set("body",e.note);
+  if(attendeeEmails.length)params.set("attendees",attendeeEmails.join(","));
+  window.location.href=`solidis-outlook:?${params.toString()}`;
+}
+
 function openOutlookDesktopDirect(e){
   const selected=e.employees.map(id=>employees.find(x=>x.id===id)).filter(Boolean);
   const subject=e.code+(e.type?` - ${e.type}`:e.absence?` - ${e.absence}`:"");
