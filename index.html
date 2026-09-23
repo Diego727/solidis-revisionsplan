@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidis Revisionsplan v16 Outlook Direkt</title>
+<title>Solidis Revisionsplan v17 Folgetermin Pendent</title>
 <style>
 :root{
   --navy:#3d5877; --navy2:#2f4866; --blue:#567596; --bg:#f5f7fa; --card:#fff;
@@ -511,11 +511,32 @@ async function saveEvent(download=false){
 
     let followId=null;
     if(follow){
-      follow.category="Pendent";
-      followId=await insertEventWithEmployees(follow);
-      // Sicherheit: Status des neu erzeugten Folgetermins direkt in Supabase auf Pendent setzen.
-      const {error:followStatusErr}=await db.from('events').update({status:'Pendent'}).eq('id',followId);
-      if(followStatusErr)throw followStatusErr;
+      const followRow={
+        start_date:follow.date,
+        end_date:follow.dateTo||follow.date,
+        period:follow.half,
+        code:follow.code,
+        status:"Pendent",
+        event_type:follow.type||null,
+        absence_type:follow.absence||null,
+        note:follow.note||null
+      };
+      const {data:followData,error:followErr}=await db.from('events').insert(followRow).select('id,status').single();
+      if(followErr)throw followErr;
+      followId=followData.id;
+
+      const followLinks=follow.employees.map(code=>{
+        const emp=employees.find(x=>x.id===code);
+        return emp?{event_id:followId,employee_id:emp.dbId}:null;
+      }).filter(Boolean);
+      if(followLinks.length){
+        const {error:followLinkErr}=await db.from('event_employees').insert(followLinks);
+        if(followLinkErr)throw followLinkErr;
+      }
+
+      if(followData.status!=="Pendent"){
+        throw new Error(`Folgetermin wurde unerwartet als "${followData.status}" statt "Pendent" gespeichert.`);
+      }
     }
 
     document.getElementById('modal').classList.remove('show');await loadData(false);
