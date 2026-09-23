@@ -510,13 +510,13 @@ async function saveEvent(download=false){
     }
 
     let followId=null;
-    if(follow)followId=await insertEventWithEmployees(follow);
+    if(follow){ follow.category="Pendent"; followId=await insertEventWithEmployees(follow); }
 
     document.getElementById('modal').classList.remove('show');await loadData(false);
     if(follow){
       const f1=new Date(follow.date+"T12:00:00").toLocaleDateString("de-CH");
       const f2=new Date(follow.dateTo+"T12:00:00").toLocaleDateString("de-CH");
-      toast(`Termin gespeichert + Folgejahr ${f1}${f2!==f1?`–${f2}`:""}.`);
+      toast(`Termin gespeichert + Folgejahr ${f1}${f2!==f1?`–${f2}`:""} als Pendent.`);
     }else toast('Termin gespeichert.');
     if(download) toast('Termin gespeichert. Outlook Desktop wurde angefordert.');
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
