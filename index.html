@@ -199,7 +199,7 @@ thead th:first-child{left:0;z-index:8}
       <section id="einstellungen" class="panel">
         <div class="card">
           <h2 style="margin-top:0">Microsoft 365 / Outlook</h2>
-          <p>Mit „Speichern & Outlook öffnen“ versucht die App jetzt direkt die installierte Outlook-App über Windows zu öffnen und den Termin bereits vorauszufüllen. Je nach Browser kann einmalig „Outlook öffnen?“ erscheinen. Falls der direkte Aufruf auf einem Gerät blockiert wird, bleibt „Kalenderdatei (.ics)“ als Rückfalllösung verfügbar. Für eine vollständig automatische Synchronisation ohne Bestätigung wäre später Microsoft Graph nötig.</p>
+          <p>Mit „Speichern & Outlook öffnen“ erstellt die App eine .ics-Kalenderdatei mit dem vorausgefüllten Termin. Windows öffnet .ics mit dem dafür hinterlegten Standardprogramm – bei entsprechender Zuordnung mit Outlook (klassisch). Für eine vollständig automatische Synchronisation ohne Bestätigung wäre später Microsoft Graph nötig.</p>
           <div class="settings-note"><b>Vorgesehene Zeiten:</b><br>Vormittag 08:00–12:00 · Nachmittag 13:00–17:00 · Ganztag 08:00–17:00</div>
           <h3>Datenspeicherung</h3>
           <p>Die Daten werden zentral in Supabase gespeichert. Änderungen sind für angemeldete Mitarbeitende gemeinsam verfügbar und werden automatisch synchronisiert.</p>
@@ -491,9 +491,8 @@ async function saveEvent(download=false){
     }
   }
 
-  // Wichtig: Den Desktop-Aufruf noch innerhalb des ursprünglichen Benutzer-Klicks auslösen.
-  // Browser blockieren externe App-Protokolle häufiger, wenn sie erst nach einem await gestartet werden.
-  if(download) openOutlookDesktopDirect(e);
+  // Outlook klassisch: .ics-Datei erzeugen. Windows öffnet sie mit dem für .ics hinterlegten Standardprogramm.
+  if(download) openOutlookEvent(e);
 
   setSync('● speichert …');
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
@@ -518,7 +517,7 @@ async function saveEvent(download=false){
       const f2=new Date(follow.dateTo+"T12:00:00").toLocaleDateString("de-CH");
       toast(`Termin gespeichert + Folgejahr ${f1}${f2!==f1?`–${f2}`:""}.`);
     }else toast('Termin gespeichert.');
-    if(download) toast('Termin gespeichert. Outlook Desktop wurde angefordert.');
+    if(download) toast('Termin gespeichert. Outlook-Kalenderdatei wurde erstellt.');
   }catch(err){console.error(err);setSync('● Synchronisationsfehler');toast('Speichern fehlgeschlagen: '+(err.message||err));}
 }
 function openOutlookDesktopDirect(e){
