@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Solidis Revisionsplan v17 KW-Fix</title>
+<title>Solidis Revisionsplan – Outlook Termin-Fix</title>
 <style>
 :root{
   --navy:#3d5877; --navy2:#2f4866; --blue:#567596; --bg:#f5f7fa; --card:#fff;
@@ -499,7 +499,7 @@ async function saveEvent(download=false){
 
   // Wichtig: Den Desktop-Aufruf noch innerhalb des ursprünglichen Benutzer-Klicks auslösen.
   // Browser blockieren externe App-Protokolle häufiger, wenn sie erst nach einem await gestartet werden.
-  if(download) openSolidisOutlook(e);
+  if(download) openOutlookEvent(e);
 
   setSync('● speichert …');
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
