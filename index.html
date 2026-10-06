@@ -448,17 +448,13 @@ function dateFromISOWeek(year,week,weekday){
   return `${monday.getUTCFullYear()}-${String(monday.getUTCMonth()+1).padStart(2,"0")}-${String(monday.getUTCDate()).padStart(2,"0")}`;
 }
 function nextYearSameWeekRange(from,to){
-  // Feste Regel: gleiche ISO-Kalenderwoche und gleicher Wochentag
-  // im darauffolgenden Kalenderjahr.
-  const a=isoWeekInfo(from);
-  const b=isoWeekInfo(to||from);
-  const sourceCalendarYear=Number(from.slice(0,4));
-  const targetYear=sourceCalendarYear+1;
-
-  return {
-    date:dateFromISOWeek(targetYear,a.week,a.weekday),
-    dateTo:dateFromISOWeek(targetYear,b.week,b.weekday)
-  };
+  // Folgetermin exakt 52 Wochen später (364 Tage).
+  function plus52Weeks(dateStr){
+    const d=new Date(dateStr+"T12:00:00Z");
+    d.setUTCDate(d.getUTCDate()+364);
+    return d.toISOString().slice(0,10);
+  }
+  return {date:plus52Weeks(from),dateTo:plus52Weeks(to||from)};
 }
 async function insertEventWithEmployees(e){
   const row={start_date:e.date,end_date:e.dateTo||e.date,period:e.half,code:e.code,status:e.category,event_type:e.type||null,absence_type:e.absence||null,note:e.note||null};
