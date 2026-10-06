@@ -191,7 +191,14 @@ thead th:first-child{left:0;z-index:8}
           <div class="settings-note"><b>Vorgesehene Zeiten:</b><br>Vormittag 08:00–12:00 · Nachmittag 13:00–17:00 · Ganztag 08:00–17:00</div>
           <h3>Datenspeicherung</h3>
           <p>Die Daten werden zentral in Supabase gespeichert. Änderungen sind für angemeldete Mitarbeitende gemeinsam verfügbar und werden automatisch synchronisiert.</p>
-          <button class="btn ghost" id="resetBtn">Daten neu laden</button>
+          <h3>Passwort ändern</h3>
+          <p>Nach dem ersten Login mit dem Startpasswort kannst du hier dein persönliches Passwort festlegen.</p>
+          <div class="grid2">
+            <div class="field"><label>Neues Passwort</label><input type="password" id="newPassword" autocomplete="new-password" placeholder="Neues Passwort"></div>
+            <div class="field"><label>Passwort wiederholen</label><input type="password" id="newPasswordRepeat" autocomplete="new-password" placeholder="Passwort wiederholen"></div>
+          </div>
+          <button class="btn blue" id="changePasswordBtn">Passwort ändern</button>
+          <button class="btn ghost" id="resetBtn" style="margin-left:8px">Daten neu laden</button>
         </div>
       </section>
     </main>
@@ -345,6 +352,22 @@ async function login(){
 }
 async function enterApp(user){document.getElementById('loginScreen').classList.add('hidden');document.getElementById('userEmail').textContent=user?.email||'';setupRealtime();await loadData(false)}
 async function logout(){await db.auth.signOut();if(realtimeChannel)db.removeChannel(realtimeChannel);document.getElementById('loginScreen').classList.remove('hidden');document.getElementById('userEmail').textContent='';document.getElementById('loginPassword').value='';}
+async function changePassword(){
+  const p1=document.getElementById("newPassword").value;
+  const p2=document.getElementById("newPasswordRepeat").value;
+  if(!p1||!p2){toast("Bitte beide Passwortfelder ausfüllen.");return}
+  if(p1!==p2){toast("Die Passwörter stimmen nicht überein.");return}
+  if(p1.length<6){toast("Das Passwort muss mindestens 6 Zeichen lang sein.");return}
+  const btn=document.getElementById("changePasswordBtn");
+  btn.disabled=true;
+  const {error}=await db.auth.updateUser({password:p1});
+  btn.disabled=false;
+  if(error){toast("Passwort konnte nicht geändert werden: "+error.message);return}
+  document.getElementById("newPassword").value="";
+  document.getElementById("newPasswordRepeat").value="";
+  toast("Passwort erfolgreich geändert.");
+}
+
 async function initAuth(){const {data:{session}}=await db.auth.getSession();if(session?.user)await enterApp(session.user);else document.getElementById('loginScreen').classList.remove('hidden')}
 
 function renderLegend(){
@@ -647,6 +670,7 @@ document.getElementById("overviewEmployee").addEventListener("change",renderOver
 document.getElementById('loginBtn').onclick=login;
 document.getElementById('loginPassword').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 document.getElementById('logoutBtn').onclick=logout;
+document.getElementById('changePasswordBtn').onclick=changePassword;
 renderLegend();
 initAuth();
 </script>
