@@ -255,7 +255,7 @@ thead th:first-child{left:0;z-index:8}
       </div>
     </div>
     <div class="modal-foot">
-      <div><button class="btn danger" id="deleteBtn" style="display:none">Löschen</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn danger" id="deleteBtn" style="display:none">Nur diesen Termin löschen</button><button class="btn danger" id="deleteSeriesBtn" style="display:none">Gesamte Serie löschen</button></div>
       <div class="right"><button class="btn ghost" id="outlookBtn">Speichern & Outlook öffnen</button><button class="btn blue" id="saveBtn">Speichern</button></div>
     </div>
   </div>
@@ -284,6 +284,12 @@ let events=[];
 let current=new Date(2026,8,1);
 let selectedHalf="V", editingId=null;
 let realtimeChannel=null, reloadTimer=null;
+// Serienkennung wird in der Notiz gespeichert; keine Änderung der Supabase-Tabellen nötig.
+const SERIES_TAG=/\[\[SOLIDIS_SERIE:([a-zA-Z0-9-]+)\]\]/;
+function seriesId(note){return String(note||'').match(SERIES_TAG)?.[1]||null}
+function visibleNote(note){return String(note||'').replace(SERIES_TAG,'').trim()}
+function seriesNote(note,id){return (visibleNote(note)+'\n[[SOLIDIS_SERIE:'+id+']]').trim()}
+function newSeriesId(){return (typeof crypto!=='undefined'&&crypto.randomUUID)?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2)}
 
 function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.style.display="block";setTimeout(()=>t.style.display="none",2600)}
 function setSync(text){const el=document.getElementById("syncStatus");if(el)el.textContent=text}
@@ -444,7 +450,7 @@ function dateRange(from,to){
 }
 function eventCovers(e,date){return dateRange(e.date,e.dateTo||e.date).includes(date)}
 function openModal(date=isoDate(current), emp=null, half="V"){
-  editingId=null; document.getElementById("modalTitle").textContent="Termin erfassen"; document.getElementById("deleteBtn").style.display="none";
+  editingId=null; document.getElementById("modalTitle").textContent="Termin erfassen"; document.getElementById("deleteBtn").style.display="none";document.getElementById("deleteSeriesBtn").style.display="none";
   document.getElementById("eventDate").value=date;document.getElementById("eventDateTo").value=date;document.getElementById("eventCode").value="";document.getElementById("eventCategory").value="Definitiv";
   document.getElementById("seriesEnabled").checked=false;
   document.getElementById("seriesDays").style.display="none";
@@ -453,12 +459,12 @@ function openModal(date=isoDate(current), emp=null, half="V"){
   setHalf(half);renderEmployeePicks(emp?[emp]:[]);document.getElementById("modalSub").textContent="";document.getElementById("modal").classList.add("show");
 }
 function openEdit(id){
-  const e=events.find(x=>x.id===id);if(!e)return; editingId=id;document.getElementById("modalTitle").textContent="Termin bearbeiten";document.getElementById("deleteBtn").style.display="inline-block";
+  const e=events.find(x=>x.id===id);if(!e)return; editingId=id;document.getElementById("modalTitle").textContent="Termin bearbeiten";document.getElementById("deleteBtn").style.display="inline-block";document.getElementById("deleteSeriesBtn").style.display=seriesId(e.note)?"inline-block":"none";
   document.getElementById("eventDate").value=e.date;document.getElementById("eventDateTo").value=e.dateTo||e.date;document.getElementById("eventCode").value=e.code;document.getElementById("eventCategory").value=e.category;
   document.getElementById("seriesEnabled").checked=false;
   document.getElementById("seriesDays").style.display="none";
   document.querySelectorAll("#seriesDays input").forEach(x=>x.checked=false);
-  document.getElementById("eventType").value=e.type||"";document.getElementById("absenceType").value=e.absence||"";document.getElementById("eventNote").value=e.note||"";document.getElementById("repeatNextYear").checked=false;
+  document.getElementById("eventType").value=e.type||"";document.getElementById("absenceType").value=e.absence||"";document.getElementById("eventNote").value=visibleNote(e.note);document.getElementById("repeatNextYear").checked=false;
   setHalf(e.half);renderEmployeePicks(e.employees);document.getElementById("modalSub").textContent=e.employees.join(", ");document.getElementById("modal").classList.add("show");
 }
 function collectEvent(){
@@ -467,7 +473,7 @@ function collectEvent(){
   if(!from||to<from){toast("Bitte einen gültigen Zeitraum wählen.");return null}
   const code=absence || document.getElementById("eventCode").value.trim();
   if(!code){toast("Bitte Kundenkürzel oder Bezeichnung eingeben.");return null} if(!selected.length){toast("Bitte mindestens eine Person auswählen.");return null}
-  return {id:editingId||null,date:from,dateTo:to,half:selectedHalf,code,category:absence?"Abwesend":document.getElementById("eventCategory").value,type:absence?"":document.getElementById("eventType").value,absence,note:document.getElementById("eventNote").value.trim(),employees:selected};
+  return {id:editingId||null,date:from,dateTo:to,half:selectedHalf,code,category:absence?"Abwesend":document.getElementById("eventCategory").value,type:absence?"":document.getElementById("eventType").value,absence,note:editingId&&seriesId(events.find(x=>x.id===editingId)?.note)?seriesNote(document.getElementById("eventNote").value.trim(),seriesId(events.find(x=>x.id===editingId)?.note)):document.getElementById("eventNote").value.trim(),employees:selected};
 }
 function isoWeekInfo(dateStr){
   const d=new Date(dateStr+"T12:00:00");
@@ -521,8 +527,9 @@ async function saveEvent(download=false){
     if(!confirm(`${dates.length} Einzeltermine erstellen?`))return;
     setSync("● speichert Serie …");
     let count=0;
+    const sid=newSeriesId();
     try{
-      for(const d of dates){await insertEventWithEmployees({...e,id:null,date:d,dateTo:d});count++}
+      for(const d of dates){await insertEventWithEmployees({...e,id:null,date:d,dateTo:d,note:seriesNote(e.note,sid)});count++}
       document.getElementById("modal").classList.remove("show");
       await loadData(false);
       toast(`${count} Serientermine gespeichert.`);
@@ -593,7 +600,7 @@ function openSolidisOutlook(e){
   params.set("start",`${e.date}T${startClock}`);
   params.set("end",`${e.dateTo||e.date}T${endClock}`);
   if(e.type)params.set("location",e.type);
-  if(e.note)params.set("body",e.note);
+  if(e.note)params.set("body",visibleNote(e.note));
   if(attendeeEmails.length)params.set("attendees",attendeeEmails.join(","));
   window.location.href=`solidis-outlook:?${params.toString()}`;
 }
@@ -643,7 +650,7 @@ function openOutlookEvent(e){
   for(const day of days){
     const [st,en]=desktopIcsTime(day,e.half);
     const uid=`${e.id}-${day}@solidis-revisionsplan`;
-    const desc=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${e.note}`:""] .filter(Boolean).join("\n");
+    const desc=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${visibleNote(e.note)}`:""] .filter(Boolean).join("\n");
     out+="BEGIN:VEVENT\r\n";
     out+=`UID:${escapeICS(uid)}\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z")}\r\n`;
     out+=`DTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${escapeICS(subject)}\r\nDESCRIPTION:${escapeICS(desc)}\r\n`;
@@ -665,7 +672,7 @@ function openOutlookEvent(e){
 function icsTime(date,half){const d=date.replaceAll("-","");if(half==="V")return[`${d}T080000`,`${d}T120000`];if(half==="N")return[`${d}T130000`,`${d}T170000`];return[`${d}T080000`,`${d}T170000`]}
 function downloadICS(items){
   if(!items.length){toast("Keine Termine vorhanden.");return} let out="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Solidis//Revisionsplan//DE\r\nCALSCALE:GREGORIAN\r\n";
-  for(const e of items)for(const day of dateRange(e.date,e.dateTo||e.date)){const [st,en]=icsTime(day,e.half),names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");out+=`BEGIN:VEVENT\r\nUID:${e.id}-${day}@solidis-revisionsplan\r\nDTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${e.code}${e.type?" - "+e.type:""}\r\nDESCRIPTION:Mitarbeitende: ${names}${e.note?" - "+e.note:""}\r\nEND:VEVENT\r\n`}
+  for(const e of items)for(const day of dateRange(e.date,e.dateTo||e.date)){const [st,en]=icsTime(day,e.half),names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");out+=`BEGIN:VEVENT\r\nUID:${e.id}-${day}@solidis-revisionsplan\r\nDTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${e.code}${e.type?" - "+e.type:""}\r\nDESCRIPTION:Mitarbeitende: ${names}${e.note?" - "+visibleNote(e.note):""}\r\nEND:VEVENT\r\n`}
   out+="END:VCALENDAR\r\n";const blob=new Blob([out],{type:"text/calendar;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="solidis-revisionsplan.ics";a.click();URL.revokeObjectURL(url);
 }
 function renderOverview(){
@@ -707,6 +714,20 @@ document.getElementById("seriesEnabled").onchange=e=>{
 };
 document.getElementById("saveBtn").onclick=()=>saveEvent(false);
 document.getElementById("outlookBtn").onclick=()=>saveEvent(true);
+document.getElementById("deleteSeriesBtn").onclick=async()=>{
+  if(!editingId)return;
+  const selected=events.find(x=>x.id===editingId), sid=seriesId(selected?.note);
+  if(!sid){toast("Dieser Termin gehört keiner Serie an.");return}
+  // Frisch aus der Datenbank laden, damit auch neu synchronisierte Serientermine erfasst werden.
+  const {data:rows,error:readErr}=await db.from('events').select('id,note');
+  if(readErr){toast('Serie konnte nicht geladen werden: '+readErr.message);return}
+  const ids=(rows||[]).filter(x=>seriesId(x.note)===sid).map(x=>x.id);
+  if(!ids.length){toast('Keine Serientermine gefunden.');return}
+  if(!confirm(`Wirklich die gesamte Serie mit ${ids.length} Terminen löschen?`))return;
+  const {error}=await db.from('events').delete().in('id',ids);
+  if(error){toast('Serie konnte nicht gelöscht werden: '+error.message);return}
+  document.getElementById('modal').classList.remove('show');await loadData(false);toast(`${ids.length} Serientermine gelöscht.`);
+};
 document.getElementById("deleteBtn").onclick=async()=>{if(!editingId)return;if(!confirm("Termin wirklich löschen?"))return;const {error}=await db.from('events').delete().eq('id',Number(editingId));if(error){toast('Löschen fehlgeschlagen: '+error.message);return}document.getElementById("modal").classList.remove("show");await loadData(false);toast("Termin gelöscht.")};
 document.getElementById("exportBtn").onclick=()=>{const p=`${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,"0")}`;downloadICS(events.filter(e=>dateRange(e.date,e.dateTo||e.date).some(d=>d.startsWith(p))))};
 document.getElementById("addEmployee").onclick=async()=>{const {error}=await db.from('employees').insert({code:'',name:'',email:''});if(error){toast('Hinzufügen fehlgeschlagen: '+error.message);return}await loadData(false);renderStaff();toast('Neue Person hinzugefügt.')};
