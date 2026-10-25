@@ -231,6 +231,19 @@ thead th:first-child{left:0;z-index:8}
           <option value="">– keine –</option><option>Ferien</option><option>Ausbildung</option><option>Militär/Zivilschutz</option>
         </select></div>
       </div>
+      <div class="field" id="seriesOptions">
+        <label style="display:flex;align-items:center;gap:9px;cursor:pointer;font-weight:600"><input type="checkbox" id="seriesEnabled" style="width:auto"> Serientermin (wöchentlich wiederholen)</label>
+        <div id="seriesDays" style="display:none;margin-top:10px">
+          <small>Datum von / bis oben festlegen und Wochentage auswählen:</small>
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px">
+            <label><input type="checkbox" data-weekday="1"> Mo</label><label><input type="checkbox" data-weekday="2"> Di</label>
+            <label><input type="checkbox" data-weekday="3"> Mi</label><label><input type="checkbox" data-weekday="4"> Do</label>
+            <label><input type="checkbox" data-weekday="5"> Fr</label><label><input type="checkbox" data-weekday="6"> Sa</label>
+            <label><input type="checkbox" data-weekday="0"> So</label>
+          </div>
+          <small>Jeder Termin wird einzeln gespeichert und kann später einzeln geändert oder gelöscht werden. Die bestehenden Kategorien bleiben erhalten.</small>
+        </div>
+      </div>
       <div class="field"><label>Mitarbeitende</label><div class="employee-picks" id="employeePicks"></div></div>
       <div class="field"><label>Notiz</label><textarea id="eventNote" rows="2" placeholder="Optional"></textarea></div>
       <div class="field">
@@ -433,12 +446,18 @@ function eventCovers(e,date){return dateRange(e.date,e.dateTo||e.date).includes(
 function openModal(date=isoDate(current), emp=null, half="V"){
   editingId=null; document.getElementById("modalTitle").textContent="Termin erfassen"; document.getElementById("deleteBtn").style.display="none";
   document.getElementById("eventDate").value=date;document.getElementById("eventDateTo").value=date;document.getElementById("eventCode").value="";document.getElementById("eventCategory").value="Definitiv";
+  document.getElementById("seriesEnabled").checked=false;
+  document.getElementById("seriesDays").style.display="none";
+  document.querySelectorAll("#seriesDays input").forEach(x=>x.checked=false);
   document.getElementById("eventType").value="vor Ort";document.getElementById("absenceType").value="";document.getElementById("eventNote").value="";document.getElementById("repeatNextYear").checked=false;
   setHalf(half);renderEmployeePicks(emp?[emp]:[]);document.getElementById("modalSub").textContent="";document.getElementById("modal").classList.add("show");
 }
 function openEdit(id){
   const e=events.find(x=>x.id===id);if(!e)return; editingId=id;document.getElementById("modalTitle").textContent="Termin bearbeiten";document.getElementById("deleteBtn").style.display="inline-block";
   document.getElementById("eventDate").value=e.date;document.getElementById("eventDateTo").value=e.dateTo||e.date;document.getElementById("eventCode").value=e.code;document.getElementById("eventCategory").value=e.category;
+  document.getElementById("seriesEnabled").checked=false;
+  document.getElementById("seriesDays").style.display="none";
+  document.querySelectorAll("#seriesDays input").forEach(x=>x.checked=false);
   document.getElementById("eventType").value=e.type||"";document.getElementById("absenceType").value=e.absence||"";document.getElementById("eventNote").value=e.note||"";document.getElementById("repeatNextYear").checked=false;
   setHalf(e.half);renderEmployeePicks(e.employees);document.getElementById("modalSub").textContent=e.employees.join(", ");document.getElementById("modal").classList.add("show");
 }
@@ -487,6 +506,29 @@ async function insertEventWithEmployees(e){
 }
 async function saveEvent(download=false){
   const e=collectEvent();if(!e)return;
+  if(document.getElementById("seriesEnabled").checked){
+    if(editingId){toast("Serien bitte als neuen Termin erstellen.");return}
+    if(download){toast("Bitte zuerst die Serie speichern. Outlook-Export erfolgt bei Bedarf separat.");return}
+    if(document.getElementById("repeatNextYear").checked){toast("Bitte entweder Serientermin oder Folgetermin auswählen.");return}
+    const weekdays=[...document.querySelectorAll("#seriesDays input:checked")].map(x=>Number(x.dataset.weekday));
+    if(!weekdays.length){toast("Bitte mindestens einen Wochentag auswählen.");return}
+    if(e.dateTo<e.date){toast("Das Enddatum liegt vor dem Startdatum.");return}
+    const dates=dateRange(e.date,e.dateTo).filter(d=>weekdays.includes(new Date(d+"T12:00:00Z").getUTCDay()));
+    if(!dates.length){toast("Keine passenden Wochentage im Zeitraum.");return}
+    if(dates.length>366){toast("Bitte einen kürzeren Zeitraum wählen (max. 366 Termine).");return}
+    const clash=dates.find(d=>events.some(x=>x.employees.some(id=>e.employees.includes(id))&&eventCovers(x,d)));
+    if(clash){toast("Doppelbuchung am "+clash+". Serie wurde nicht gespeichert.");return}
+    if(!confirm(`${dates.length} Einzeltermine erstellen?`))return;
+    setSync("● speichert Serie …");
+    let count=0;
+    try{
+      for(const d of dates){await insertEventWithEmployees({...e,id:null,date:d,dateTo:d});count++}
+      document.getElementById("modal").classList.remove("show");
+      await loadData(false);
+      toast(`${count} Serientermine gespeichert.`);
+    }catch(err){await loadData(false);toast(`${count} Termine gespeichert, danach Fehler: ${err.message}`)}
+    return;
+  }
   const repeatNextYear=document.getElementById("repeatNextYear").checked;
   const days=dateRange(e.date,e.dateTo);
   const conflict=events.find(x=>x.id!==e.id&&x.employees.some(id=>e.employees.includes(id))&&days.some(d=>eventCovers(x,d)));
@@ -659,6 +701,10 @@ document.getElementById("newBtn").onclick=()=>openModal(isoDate(current),null,"V
 document.getElementById("closeModal").onclick=()=>document.getElementById("modal").classList.remove("show");
 document.getElementById("modal").onclick=e=>{if(e.target.id==="modal")e.currentTarget.classList.remove("show")};
 document.querySelectorAll(".segment button").forEach(b=>b.onclick=()=>setHalf(b.dataset.half));
+document.getElementById("seriesEnabled").onchange=e=>{
+  document.getElementById("seriesDays").style.display=e.target.checked?"block":"none";
+  if(e.target.checked)document.getElementById("repeatNextYear").checked=false;
+};
 document.getElementById("saveBtn").onclick=()=>saveEvent(false);
 document.getElementById("outlookBtn").onclick=()=>saveEvent(true);
 document.getElementById("deleteBtn").onclick=async()=>{if(!editingId)return;if(!confirm("Termin wirklich löschen?"))return;const {error}=await db.from('events').delete().eq('id',Number(editingId));if(error){toast('Löschen fehlgeschlagen: '+error.message);return}document.getElementById("modal").classList.remove("show");await loadData(false);toast("Termin gelöscht.")};
