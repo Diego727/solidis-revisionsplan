@@ -449,6 +449,13 @@ function dateRange(from,to){
   while(d<=e){if(d.getDay()!==0&&d.getDay()!==6)out.push(isoDate(d));d.setDate(d.getDate()+1)} return out;
 }
 function eventCovers(e,date){return dateRange(e.date,e.dateTo||e.date).includes(date)}
+// Vormittag und Nachmittag sind unabhängig; Ganztag belegt beide Zeiträume.
+function periodsOverlap(a,b){return a==="G"||b==="G"||a===b}
+function bookingConflicts(existing,candidate,days){
+  return existing.id!==candidate.id && periodsOverlap(existing.half,candidate.half) &&
+    existing.employees.some(id=>candidate.employees.includes(id)) &&
+    days.some(d=>eventCovers(existing,d));
+}
 function openModal(date=isoDate(current), emp=null, half="V"){
   editingId=null; document.getElementById("modalTitle").textContent="Termin erfassen"; document.getElementById("deleteBtn").style.display="none";document.getElementById("deleteSeriesBtn").style.display="none";
   document.getElementById("eventDate").value=date;document.getElementById("eventDateTo").value=date;document.getElementById("eventCode").value="";document.getElementById("eventCategory").value="Definitiv";
@@ -522,7 +529,7 @@ async function saveEvent(download=false){
     const dates=dateRange(e.date,e.dateTo).filter(d=>weekdays.includes(new Date(d+"T12:00:00Z").getUTCDay()));
     if(!dates.length){toast("Keine passenden Wochentage im Zeitraum.");return}
     if(dates.length>366){toast("Bitte einen kürzeren Zeitraum wählen (max. 366 Termine).");return}
-    const clash=dates.find(d=>events.some(x=>x.employees.some(id=>e.employees.includes(id))&&eventCovers(x,d)));
+    const clash=dates.find(d=>events.some(x=>bookingConflicts(x,e,[d])));
     if(clash){toast("Doppelbuchung am "+clash+". Serie wurde nicht gespeichert.");return}
     if(!confirm(`${dates.length} Einzeltermine erstellen?`))return;
     setSync("● speichert Serie …");
@@ -538,7 +545,7 @@ async function saveEvent(download=false){
   }
   const repeatNextYear=document.getElementById("repeatNextYear").checked;
   const days=dateRange(e.date,e.dateTo);
-  const conflict=events.find(x=>x.id!==e.id&&x.employees.some(id=>e.employees.includes(id))&&days.some(d=>eventCovers(x,d)));
+  const conflict=events.find(x=>bookingConflicts(x,e,days));
   if(conflict){const who=conflict.employees.find(id=>e.employees.includes(id)),emp=employees.find(x=>x.id===who);toast(`Doppelbuchung: ${emp?.name||who} hat an diesem Datum bereits einen Termin.`);return}
 
   let follow=null;
@@ -546,7 +553,7 @@ async function saveEvent(download=false){
     const mapped=nextYearSameWeekRange(e.date,e.dateTo);
     follow={...e,id:null,date:mapped.date,dateTo:mapped.dateTo,category:"Pendent"};
     const followDays=dateRange(follow.date,follow.dateTo);
-    const followConflict=events.find(x=>x.employees.some(id=>follow.employees.includes(id))&&followDays.some(d=>eventCovers(x,d)));
+    const followConflict=events.find(x=>bookingConflicts(x,follow,followDays));
     if(followConflict){
       const who=followConflict.employees.find(id=>follow.employees.includes(id)),emp=employees.find(x=>x.id===who);
       toast(`Folgejahr nicht möglich: ${emp?.name||who} ist in dieser Kalenderwoche bereits belegt.`);return;
