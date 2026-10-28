@@ -281,7 +281,8 @@ const defaultEmployees = [
 ];
 let employees=[];
 let events=[];
-let current=new Date(2026,8,1);
+const startupDate=new Date();
+let current=new Date(startupDate.getFullYear(),startupDate.getMonth(),1);
 let selectedHalf="V", editingId=null;
 let realtimeChannel=null, reloadTimer=null;
 // Serienkennung wird in der Notiz gespeichert; keine Änderung der Supabase-Tabellen nötig.
