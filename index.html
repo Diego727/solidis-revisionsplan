@@ -224,9 +224,7 @@ thead th:first-child{left:0;z-index:8}
         <div class="field"><label>Kategorie / Farbe</label><select id="eventCategory"></select></div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Terminart</label><select id="eventType">
-          <option value=""></option><option>vor Ort</option><option>Büro</option>
-        </select></div>
+        <div class="field"><label>Terminart</label><input id="eventType" list="eventTypeOptions" placeholder="Auswählen oder eigene Terminart eingeben" autocomplete="off"><datalist id="eventTypeOptions"><option value="vor Ort"><option value="Büro"></datalist></div>
         <div class="field"><label>Abwesenheit (optional)</label><select id="absenceType">
           <option value="">– keine –</option><option>Ferien</option><option>Ausbildung</option><option>Militär/Zivilschutz</option>
         </select></div>
