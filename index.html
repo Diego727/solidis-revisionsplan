@@ -659,7 +659,7 @@ function openOutlookEvent(e){
     const desc=[`Mitarbeitende: ${names}`,e.note?`Notiz: ${visibleNote(e.note)}`:""] .filter(Boolean).join("\n");
     out+="BEGIN:VEVENT\r\n";
     out+=`UID:${escapeICS(uid)}\r\nDTSTAMP:${new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}Z$/,"Z")}\r\n`;
-    out+=`DTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${escapeICS(subject)}\r\nDESCRIPTION:${escapeICS(desc)}\r\n`;
+    out+=`DTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${escapeICS(subject)}\r\nLOCATION:${escapeICS(e.type||"")}\r\nDESCRIPTION:${escapeICS(desc)}\r\n`;
     for(const mail of attendeeEmails)out+=`ATTENDEE;ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:${escapeICS(mail)}\r\n`;
     out+="END:VEVENT\r\n";
   }
@@ -678,7 +678,7 @@ function openOutlookEvent(e){
 function icsTime(date,half){const d=date.replaceAll("-","");if(half==="V")return[`${d}T080000`,`${d}T120000`];if(half==="N")return[`${d}T130000`,`${d}T170000`];return[`${d}T080000`,`${d}T170000`]}
 function downloadICS(items){
   if(!items.length){toast("Keine Termine vorhanden.");return} let out="BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Solidis//Revisionsplan//DE\r\nCALSCALE:GREGORIAN\r\n";
-  for(const e of items)for(const day of dateRange(e.date,e.dateTo||e.date)){const [st,en]=icsTime(day,e.half),names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");out+=`BEGIN:VEVENT\r\nUID:${e.id}-${day}@solidis-revisionsplan\r\nDTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${e.code}${e.type?" - "+e.type:""}\r\nDESCRIPTION:Mitarbeitende: ${names}${e.note?" - "+visibleNote(e.note):""}\r\nEND:VEVENT\r\n`}
+  for(const e of items)for(const day of dateRange(e.date,e.dateTo||e.date)){const [st,en]=icsTime(day,e.half),names=e.employees.map(id=>employees.find(x=>x.id===id)?.name||id).join(", ");out+=`BEGIN:VEVENT\r\nUID:${e.id}-${day}@solidis-revisionsplan\r\nDTSTART:${st}\r\nDTEND:${en}\r\nSUMMARY:${escapeICS(e.code+(e.type?" - "+e.type:""))}\r\nLOCATION:${escapeICS(e.type||"")}\r\nDESCRIPTION:${escapeICS("Mitarbeitende: "+names+(e.note?" - "+visibleNote(e.note):""))}\r\nEND:VEVENT\r\n`}
   out+="END:VCALENDAR\r\n";const blob=new Blob([out],{type:"text/calendar;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="solidis-revisionsplan.ics";a.click();URL.revokeObjectURL(url);
 }
 function renderOverview(){
