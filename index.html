@@ -224,7 +224,7 @@ thead th:first-child{left:0;z-index:8}
         <div class="field"><label>Kategorie / Farbe</label><select id="eventCategory"></select></div>
       </div>
       <div class="grid2">
-        <div class="field"><label>Terminart</label><input id="eventType" list="eventTypeOptions" placeholder="Auswählen oder eigene Terminart eingeben" autocomplete="off"><datalist id="eventTypeOptions"><option value="vor Ort"><option value="Büro"></datalist></div>
+        <div class="field"><label>Terminart</label><div style="display:flex;gap:6px"><input type="text" id="eventType" placeholder="Terminart eingeben" autocomplete="off" style="min-width:0;flex:1"><select id="eventTypeQuick" aria-label="Terminart auswählen" style="width:115px;flex:0 0 115px"><option value="">Auswahl ▾</option><option value="vor Ort">vor Ort</option><option value="Büro">Büro</option></select></div></div>
         <div class="field"><label>Abwesenheit (optional)</label><select id="absenceType">
           <option value="">– keine –</option><option>Ferien</option><option>Ausbildung</option><option>Militär/Zivilschutz</option>
         </select></div>
@@ -738,6 +738,7 @@ document.getElementById("deleteBtn").onclick=async()=>{if(!editingId)return;if(!
 document.getElementById("exportBtn").onclick=()=>{const p=`${current.getFullYear()}-${String(current.getMonth()+1).padStart(2,"0")}`;downloadICS(events.filter(e=>dateRange(e.date,e.dateTo||e.date).some(d=>d.startsWith(p))))};
 document.getElementById("addEmployee").onclick=async()=>{const {error}=await db.from('employees').insert({code:'',name:'',email:''});if(error){toast('Hinzufügen fehlgeschlagen: '+error.message);return}await loadData(false);renderStaff();toast('Neue Person hinzugefügt.')};
 document.getElementById("resetBtn").onclick=()=>loadData(true);
+document.getElementById("eventTypeQuick").addEventListener("change",e=>{if(e.target.value)document.getElementById("eventType").value=e.target.value});
 document.getElementById("absenceType").addEventListener("change",e=>{if(e.target.value){document.getElementById("eventType").value="";document.getElementById("eventCategory").value="Abwesend"}});
 document.getElementById("overviewEmployee").addEventListener("change",renderOverview);document.getElementById("overviewMonth").addEventListener("change",renderOverview);document.getElementById("printOverview").onclick=()=>window.print();
 document.getElementById('loginBtn').onclick=login;
